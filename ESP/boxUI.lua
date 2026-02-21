@@ -6,8 +6,11 @@ local Camera = workspace.CurrentCamera
 local ui;
 if gethui then ui = gethui() else ui = Players.LocalPlayer:WaitForChild("PlayerGui") end
 
+-- Cleanup previous runs to avoid overlay clutter
+if ui:FindFirstChild("UI_Box_ESP") then ui.UI_Box_ESP:Destroy() end
+
 local ESPScreen = Instance.new("ScreenGui")
-ESPScreen.Name = "\0"
+ESPScreen.Name = "UI_Box_ESP"
 ESPScreen.IgnoreGuiInset = true
 ESPScreen.Parent = ui
 
@@ -17,12 +20,12 @@ local Settings = {
     CornerSize = 0.2,
     BoxColor = Color3.fromRGB(0, 255, 0),
     HealthBar = true,
-    Flags = true
+    Flags = true,
+    TeamCheck = true
 }
 
 local ESP_Objects = {}
 
--- Utility to create UI elements
 local function create(class, props)
     local obj = Instance.new(class)
     for i, v in pairs(props) do obj[i] = v end
@@ -34,14 +37,12 @@ local function createESP(player)
 
     local box = {}
     
-    -- Main Container Frame
     box.Main = create("Frame", {
         BackgroundTransparency = 1,
         Visible = false,
         Parent = ESPScreen
     })
 
-    -- Box Outline (Used for "Box" mode)
     box.Outline = create("UIStroke", {
         Color = Settings.BoxColor,
         Thickness = 1.5,
@@ -49,7 +50,6 @@ local function createESP(player)
         Enabled = false
     })
 
-    -- Corner Frames
     box.Corners = {}
     for i = 1, 8 do
         box.Corners[i] = create("Frame", {
@@ -60,7 +60,6 @@ local function createESP(player)
         })
     end
 
-    -- Health Bar
     box.HealthBarBG = create("Frame", {
         BackgroundColor3 = Color3.fromRGB(0, 0, 0),
         BackgroundTransparency = 0.5,
@@ -68,13 +67,13 @@ local function createESP(player)
         Visible = false,
         Parent = ESPScreen
     })
+
     box.HealthBar = create("Frame", {
         BorderSizePixel = 0,
         Visible = false,
         Parent = box.HealthBarBG
     })
 
-    -- Flags
     box.InfoFlags = create("TextLabel", {
         BackgroundTransparency = 1,
         Font = Enum.Font.Code,
@@ -91,7 +90,7 @@ local function createESP(player)
         local root = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
 
-        if not char or not root or not hum or hum.Health <= 0 or not Settings.Enabled then
+        if not char or not root or not hum or hum.Health <= 0 or not Settings.Enabled or (Settings.TeamCheck and player.Team == Players.LocalPlayer.Team) then
             box.Main.Visible = false
             box.HealthBarBG.Visible = false
             box.InfoFlags.Visible = false
@@ -106,9 +105,8 @@ local function createESP(player)
             return
         end
 
-        -- Bounding Box Logic
         local cf = root.CFrame
-        local size = Vector3.new(4, 6, 0) -- Character approximation
+        local size = Vector3.new(4, 6, 0)
         local corners = {
             Camera:WorldToViewportPoint((cf * CFrame.new(-size.X/2, size.Y/2, 0)).p),
             Camera:WorldToViewportPoint((cf * CFrame.new(size.X/2, size.Y/2, 0)).p),
@@ -127,8 +125,6 @@ local function createESP(player)
         end
 
         local w, h = maxX - minX, maxY - minY
-        
-        -- Update Main Box
         box.Main.Position = UDim2.new(0, minX, 0, minY)
         box.Main.Size = UDim2.new(0, w, 0, h)
         box.Main.Visible = true
@@ -140,33 +136,37 @@ local function createESP(player)
         else
             box.Outline.Enabled = false
             local cLen = w * Settings.CornerSize
-            local t = 1.5 -- Thickness
+            local t = 1.5 
             
-            -- Simple logic to position 8 frames as corners
-            box.Corners[1].Size = UDim2.new(0, cLen, 0, t) -- TopLeft H
-            box.Corners[1].Position = UDim2.new(0, 0, 0, 0)
-            box.Corners[2].Size = UDim2.new(0, t, 0, cLen) -- TopLeft V
-            box.Corners[2].Position = UDim2.new(0, 0, 0, 0)
-            -- ... (Rest of corners follow this pattern)
+            -- Top Left
+            box.Corners[1].Size, box.Corners[1].Position = UDim2.new(0, cLen, 0, t), UDim2.new(0, 0, 0, 0)
+            box.Corners[2].Size, box.Corners[2].Position = UDim2.new(0, t, 0, cLen), UDim2.new(0, 0, 0, 0)
+            -- Top Right
+            box.Corners[3].Size, box.Corners[3].Position = UDim2.new(0, cLen, 0, t), UDim2.new(1, -cLen, 0, 0)
+            box.Corners[4].Size, box.Corners[4].Position = UDim2.new(0, t, 0, cLen), UDim2.new(1, -t, 0, 0)
+            -- Bottom Left
+            box.Corners[5].Size, box.Corners[5].Position = UDim2.new(0, cLen, 0, t), UDim2.new(0, 0, 1, -t)
+            box.Corners[6].Size, box.Corners[6].Position = UDim2.new(0, t, 0, cLen), UDim2.new(0, 0, 1, -cLen)
+            -- Bottom Right
+            box.Corners[7].Size, box.Corners[7].Position = UDim2.new(0, cLen, 0, t), UDim2.new(1, -cLen, 1, -t)
+            box.Corners[8].Size, box.Corners[8].Position = UDim2.new(0, t, 0, cLen), UDim2.new(1, -t, 1, -cLen)
+
             for _, v in pairs(box.Corners) do v.Visible = true v.BackgroundColor3 = Settings.BoxColor end
         end
 
-        -- Health Bar
         if Settings.HealthBar then
-            local pct = hum.Health / hum.MaxHealth
+            local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             box.HealthBarBG.Visible = true
             box.HealthBarBG.Position = UDim2.new(0, minX - 6, 0, minY)
             box.HealthBarBG.Size = UDim2.new(0, 3, 0, h)
-            
             box.HealthBar.Visible = true
             box.HealthBar.BackgroundColor3 = Color3.fromHSV(pct * 0.3, 1, 1)
             box.HealthBar.Size = UDim2.new(1, 0, pct, 0)
             box.HealthBar.Position = UDim2.new(0, 0, 1 - pct, 0)
         end
 
-        -- Flags
         if Settings.Flags then
-            local dist = (Camera.CFrame.p - root.Position).Magnitude
+            local dist = (Camera.CFrame.Position - root.Position).Magnitude
             box.InfoFlags.Visible = true
             box.InfoFlags.TextSize = math.clamp(h * 0.15, 10, 14)
             box.InfoFlags.Position = UDim2.new(0, maxX + 4, 0, minY)
@@ -177,26 +177,15 @@ local function createESP(player)
     ESP_Objects[player] = box
 end
 
-
 local function removeESP(player)
     local box = ESP_Objects[player]
-    if not box then
-        return
+    if box then
+        if box.Connection then box.Connection:Disconnect() end
+        box.Main:Destroy()
+        box.HealthBarBG:Destroy()
+        box.InfoFlags:Destroy()
+        ESP_Objects[player] = nil
     end
-
-    if box.Connection then
-        box.Connection:Disconnect()
-    end
-
-    for _, line in ipairs(box.Lines) do
-        line:Remove()
-    end
-
-    box.HealthBarBG:Remove()
-    box.HealthBar:Remove()
-    box.InfoFlags:Remove()
-
-    ESP_Objects[player] = nil
 end
 
 Players.PlayerAdded:Connect(createESP)
@@ -205,3 +194,5 @@ Players.PlayerRemoving:Connect(removeESP)
 for _, player in ipairs(Players:GetPlayers()) do
     createESP(player)
 end
+
+return Settings
