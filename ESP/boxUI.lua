@@ -85,19 +85,23 @@ local function createESP(player)
         Parent = ESPScreen
     })
 
-    box.Connection = RunService.RenderStepped:Connect(function()
-        local char = player.Character
+    boxlocal char = player.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
 
-        if not char or not root or not hum or hum.Health <= 0 or not Settings.Enabled or (Settings.TeamCheck and player.Team == Players.LocalPlayer.Team) then
+        -- Safety check for Team to avoid indexing nil
+        local playerTeam = player.Team
+        local myTeam = Players.LocalPlayer.Team
+
+        if not char or not root or not hum or hum.Health <= 0 or not Settings.Enabled or (Settings.TeamCheck and playerTeam == myTeam) then
             box.Main.Visible = false
             box.HealthBarBG.Visible = false
             box.InfoFlags.Visible = false
             return
         end
 
-        local _, onScreen = Camera:WorldToViewportPoint(root.Position)
+        -- IMPORTANT: Extract only the Vector3 position for the math logic
+        local rootPos, onScreen = Camera:WorldToViewportPoint(root.Position)
         if not onScreen then
             box.Main.Visible = false
             box.HealthBarBG.Visible = false
@@ -107,23 +111,31 @@ local function createESP(player)
 
         local cf = root.CFrame
         local size = Vector3.new(4, 6, 0)
+        
+        -- FIX: Use [1] to capture ONLY the Vector3 returned by the function
+        local function getScreenPos(worldCFrame)
+            local p = Camera:WorldToViewportPoint(worldCFrame.p)
+            return Vector2.new(p.X, p.Y)
+        end
+
         local corners = {
-            Camera:WorldToViewportPoint((cf * CFrame.new(-size.X/2, size.Y/2, 0)).p),
-            Camera:WorldToViewportPoint((cf * CFrame.new(size.X/2, size.Y/2, 0)).p),
-            Camera:WorldToViewportPoint((cf * CFrame.new(-size.X/2, -size.Y/2, 0)).p),
-            Camera:WorldToViewportPoint((cf * CFrame.new(size.X/2, -size.Y/2, 0)).p)
+            getScreenPos(cf * CFrame.new(-size.X/2, size.Y/2, 0)),
+            getScreenPos(cf * CFrame.new(size.X/2, size.Y/2, 0)),
+            getScreenPos(cf * CFrame.new(-size.X/2, -size.Y/2, 0)),
+            getScreenPos(cf * CFrame.new(size.X/2, -size.Y/2, 0))
         }
 
         local minX, minY = math.huge, math.huge
         local maxX, maxY = -math.huge, -math.huge
 
         for _, v in pairs(corners) do
+            -- v is now guaranteed to be a Vector2/Vector3, not a boolean
             minX = math.min(minX, v.X)
             minY = math.min(minY, v.Y)
             maxX = math.max(maxX, v.X)
             maxY = math.max(maxY, v.Y)
         end
-
+    
         local w, h = maxX - minX, maxY - minY
         box.Main.Position = UDim2.new(0, minX, 0, minY)
         box.Main.Size = UDim2.new(0, w, 0, h)
