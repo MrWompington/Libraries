@@ -20,20 +20,21 @@ local Library = {
     Targets = {}
 }
 
--- Precise line creation to mimic Drawing.new("Line")
 local function createLine()
     local line = Instance.new("Frame")
     line.BorderSizePixel = 0
-    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    -- Critical Fix: AnchorPoint at 0.5 ensures rotation happens at the midpoint
+    line.AnchorPoint = Vector2.new(0.5, 0.5) 
     line.BackgroundColor3 = Library.color
     line.Visible = false
     line.Parent = ESPScreen
     return line
 end
 
--- Math to position a Frame between two 2D points
-local function updateLine(line, p1, p2)
-    local dist = (p1 - p2).Magnitude
+-- Precise math to mimic Drawing.Line behavior using UI Frames
+local function drawLineBetween(line, p1, p2)
+    local unit = (p2 - p1).Unit
+    local dist = (p2 - p1).Magnitude
     local center = (p1 + p2) / 2
     local angle = math.atan2(p2.Y - p1.Y, p2.X - p1.X)
 
@@ -43,35 +44,10 @@ local function updateLine(line, p1, p2)
     line.Visible = true
 end
 
-local function getJoints(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local isR15 = (hum and hum.RigType == Enum.HumanoidRigType.R15)
-    
-    if isR15 then
-        return {
-            {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
-            {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
-            {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
-            {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
-            {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"}
-        }
-    else
-        -- R6 Math requires offsets to look clean
-        return {
-            {"Head", "Torso", "R6_Head"},
-            {"Torso", "Left Arm", "R6_LeftArm"},
-            {"Torso", "Right Arm", "R6_RightArm"},
-            {"Torso", "Left Leg", "R6_LeftLeg"},
-            {"Torso", "Right Leg", "R6_RightLeg"},
-            {"Torso", "Torso", "R6_Spine"}
-        }
-    end
-end
-
 local function drawSkeleton(obj)
     local lines = {}
-    local connection
     
+    local connection
     connection = RunService.RenderStepped:Connect(function()
         if not obj or not obj.Parent or not table.find(Library.Targets, obj) then
             for _, v in pairs(lines) do v:Destroy() end
@@ -94,52 +70,64 @@ local function drawSkeleton(obj)
             return
         end
 
-        local joints = getJoints(obj)
-        for i, joint in pairs(joints) do
-            local p1, p2
+        local isR15 = hum.RigType == Enum.HumanoidRigType.R15
+        
+        -- Internal function to handle point-to-point drawing
+        local function segment(name, v3_1, v3_2)
+            local p1, vis1 = Camera:WorldToViewportPoint(v3_1)
+            local p2, vis2 = Camera:WorldToViewportPoint(v3_2)
             
-            -- R6 Specific Offset Math from original Blissful4992 lib
-            if joint[3] and joint[3]:find("R6") then
-                local torso = obj:FindFirstChild("Torso")
-                if not torso then continue end
-                local tHeight = torso.Size.Y/2 - 0.2
-                
-                if joint[3] == "R6_Head" then
-                    p1 = Camera:WorldToViewportPoint(obj.Head.Position)
-                    p2 = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, tHeight, 0)).p)
-                elseif joint[3] == "R6_Spine" then
-                    p1 = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, tHeight, 0)).p)
-                    p2 = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, -tHeight, 0)).p)
-                else
-                    local limb = obj:FindFirstChild(joint[2])
-                    if limb then
-                        local lHeight = limb.Size.Y/2 - 0.2
-                        p1 = Camera:WorldToViewportPoint((torso.CFrame * CFrame.new(0, (joint[2]:find("Leg") and -tHeight or tHeight), 0)).p)
-                        p2 = Camera:WorldToViewportPoint((limb.CFrame * CFrame.new(0, lHeight, 0)).p)
-                        
-                        -- Draw the extra limb segment
-                        local extraKey = joint[2].."_extra"
-                        local p3 = Camera:WorldToViewportPoint((limb.CFrame * CFrame.new(0, -lHeight, 0)).p)
-                        lines[extraKey] = lines[extraKey] or createLine()
-                        updateLine(lines[extraKey], Vector2.new(p2.X, p2.Y), Vector2.new(p3.X, p3.Y))
-                    end
-                end
+            lines[name] = lines[name] or createLine()
+            if vis1 or vis2 then
+                drawLineBetween(lines[name], Vector2.new(p1.X, p1.Y), Vector2.new(p2.X, p2.Y))
+                lines[name].BackgroundColor3 = (Library.teamcheck and isPlayer and isPlayer.TeamColor.Color) or Library.color
             else
-                -- Standard R15 Logic
-                local partA, partB = obj:FindFirstChild(joint[1]), obj:FindFirstChild(joint[2])
-                if partA and partB then
-                    p1 = Camera:WorldToViewportPoint(partA.Position)
-                    p2 = Camera:WorldToViewportPoint(partB.Position)
-                end
+                lines[name].Visible = false
             end
+        end
 
-            if p1 and p2 then
-                lines[i] = lines[i] or createLine()
-                updateLine(lines[i], Vector2.new(p1.X, p1.Y), Vector2.new(p2.X, p2.Y))
-                lines[i].BackgroundColor3 = (Library.teamcheck and isPlayer and isPlayer.TeamColor.Color) or Library.color
-            elseif lines[i] then
-                lines[i].Visible = false
-            end
+        if isR15 then
+            -- R15 Rig Logic
+            local parts = obj
+            segment("HeadSpine", parts.Head.Position, parts.UpperTorso.Position)
+            segment("Spine", parts.UpperTorso.Position, parts.LowerTorso.Position)
+            -- Arms
+            segment("L_Arm1", parts.UpperTorso.Position, parts.LeftUpperArm.Position)
+            segment("L_Arm2", parts.LeftUpperArm.Position, parts.LeftLowerArm.Position)
+            segment("L_Arm3", parts.LeftLowerArm.Position, parts.LeftHand.Position)
+            segment("R_Arm1", parts.UpperTorso.Position, parts.RightUpperArm.Position)
+            segment("R_Arm2", parts.RightUpperArm.Position, parts.RightLowerArm.Position)
+            segment("R_Arm3", parts.RightLowerArm.Position, parts.RightHand.Position)
+            -- Legs
+            segment("L_Leg1", parts.LowerTorso.Position, parts.LeftUpperLeg.Position)
+            segment("L_Leg2", parts.LeftUpperLeg.Position, parts.LeftLowerLeg.Position)
+            segment("L_Leg3", parts.LeftLowerLeg.Position, parts.LeftFoot.Position)
+            segment("R_Leg1", parts.LowerTorso.Position, parts.RightUpperLeg.Position)
+            segment("R_Leg2", parts.RightUpperLeg.Position, parts.RightLowerLeg.Position)
+            segment("R_Leg3", parts.RightLowerLeg.Position, parts.RightFoot.Position)
+        else
+            -- R6 Rig Logic (Matches Blissful4992 Offset Math)
+            local t = obj.Torso
+            local tHeight = t.Size.Y/2 - 0.2
+            
+            segment("HeadSpine", obj.Head.Position, (t.CFrame * CFrame.new(0, tHeight, 0)).p)
+            segment("Spine", (t.CFrame * CFrame.new(0, tHeight, 0)).p, (t.CFrame * CFrame.new(0, -tHeight, 0)).p)
+            
+            -- Arms
+            local la, ra = obj["Left Arm"], obj["Right Arm"]
+            local laH, raH = la.Size.Y/2 - 0.2, ra.Size.Y/2 - 0.2
+            segment("L_Arm_Joint", (t.CFrame * CFrame.new(0, tHeight, 0)).p, (la.CFrame * CFrame.new(0, laH, 0)).p)
+            segment("L_Arm_Limb", (la.CFrame * CFrame.new(0, laH, 0)).p, (la.CFrame * CFrame.new(0, -laH, 0)).p)
+            segment("R_Arm_Joint", (t.CFrame * CFrame.new(0, tHeight, 0)).p, (ra.CFrame * CFrame.new(0, raH, 0)).p)
+            segment("R_Arm_Limb", (ra.CFrame * CFrame.new(0, raH, 0)).p, (ra.CFrame * CFrame.new(0, -raH, 0)).p)
+            
+            -- Legs
+            local ll, rl = obj["Left Leg"], obj["Right Leg"]
+            local llH, rlH = ll.Size.Y/2 - 0.2, rl.Size.Y/2 - 0.2
+            segment("L_Leg_Joint", (t.CFrame * CFrame.new(0, -tHeight, 0)).p, (ll.CFrame * CFrame.new(0, llH, 0)).p)
+            segment("L_Leg_Limb", (ll.CFrame * CFrame.new(0, llH, 0)).p, (ll.CFrame * CFrame.new(0, -llH, 0)).p)
+            segment("R_Leg_Joint", (t.CFrame * CFrame.new(0, -tHeight, 0)).p, (rl.CFrame * CFrame.new(0, rlH, 0)).p)
+            segment("R_Leg_Limb", (rl.CFrame * CFrame.new(0, rlH, 0)).p, (rl.CFrame * CFrame.new(0, -rlH, 0)).p)
         end
     end)
 end
@@ -147,8 +135,9 @@ end
 function Library.Hook(target)
     local function process(char)
         if not char then return end
-        task.defer(function()
-            char:WaitForChild("HumanoidRootPart", 5)
+        task.spawn(function()
+            char:WaitForChild("HumanoidRootPart", 10)
+            char:WaitForChild("Head", 10)
             if not table.find(Library.Targets, char) then
                 table.insert(Library.Targets, char)
                 drawSkeleton(char)
@@ -159,7 +148,7 @@ function Library.Hook(target)
     if typeof(target) == "Instance" then
         if target:IsA("Player") then
             target.CharacterAdded:Connect(process)
-            process(target.Character)
+            if target.Character then process(target.Character) end
         elseif target:IsA("Model") then
             process(target)
         end
