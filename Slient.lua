@@ -102,7 +102,7 @@ local function getBestTarget()
     return best
 end
 
--- ── Pre-flick intercept ───────────────────────────────────────
+-- ── Flick on input frame ─────────────────────────────────────
 UserInput.InputBegan:Connect(function(input, processed)
     if processed           then return end
     if not Library.enabled then return end
@@ -115,15 +115,7 @@ UserInput.InputBegan:Connect(function(input, processed)
     Camera.CFrame    = CFrame.lookAt(originalCF.Position, target.Position)
 
     if Library.snapBack then
-        local frames = 0
-        local conn
-        conn = RunService.RenderStepped:Connect(function()
-            frames += 1
-            if frames >= Library.snapFrames then
-                Camera.CFrame = originalCF
-                conn:Disconnect()
-            end
-        end)
+        Camera.CFrame = originalCF
     end
 end)
 
