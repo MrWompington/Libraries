@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 
-local ui;
+local ui
 if gethui then ui = gethui() else ui = Players.LocalPlayer:WaitForChild("PlayerGui") end
 
 if ui:FindFirstChild("Box_ESP") then ui.Box_ESP:Destroy() end
@@ -13,14 +13,15 @@ ESPScreen.IgnoreGuiInset = true
 ESPScreen.Parent = ui
 
 local Library = {
-    Enabled = true,
-    BoxMode = "Corners",
-    CornerSize = 0.2,
-    BoxColor = Color3.fromRGB(0, 255, 0),
-    HealthBar = true,
-    Flags = true,
-    TeamCheck = false,
-    Targets = {}
+    Enabled     = false, -- default off, UI controls this
+    BoxMode     = "Corners",
+    CornerSize  = 0.2,
+    BoxColor    = Color3.fromRGB(0, 255, 0),
+    HealthBar   = true,
+    Flags       = true,
+    TeamCheck   = false,
+    Targets     = {},
+    Boxes       = {} -- track live box frames per target
 }
 
 local function create(class, props)
@@ -38,44 +39,65 @@ local function drawBox(obj)
         box.Corners[i] = create("Frame", {BackgroundColor3 = Library.BoxColor, BorderSizePixel = 0, Visible = false, Parent = box.Main})
     end
     box.HealthBarBG = create("Frame", {BackgroundColor3 = Color3.new(0,0,0), BackgroundTransparency = 0.5, BorderSizePixel = 0, Visible = false, Parent = ESPScreen})
-    box.HealthBar = create("Frame", {BorderSizePixel = 0, Visible = false, Parent = box.HealthBarBG})
-    box.InfoFlags = create("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Code, TextColor3 = Color3.new(1,1,1), TextStrokeTransparency = 0, TextXAlignment = "Left", TextYAlignment = "Top", Visible = false, Parent = ESPScreen})
+    box.HealthBar   = create("Frame", {BorderSizePixel = 0, Visible = false, Parent = box.HealthBarBG})
+    box.InfoFlags   = create("TextLabel", {BackgroundTransparency = 1, Font = Enum.Font.Code, TextColor3 = Color3.new(1,1,1), TextStrokeTransparency = 0, TextXAlignment = "Left", TextYAlignment = "Top", Visible = false, Parent = ESPScreen})
+
+    -- store reference so we can hide/show without destroying
+    Library.Boxes[obj] = box
 
     local connection
     connection = RunService.RenderStepped:Connect(function()
-        if not obj or not obj.Parent or not Library.Enabled or not table.find(Library.Targets, obj) then
-            box.Main:Destroy(); box.HealthBarBG:Destroy(); box.InfoFlags:Destroy()
+        -- clean up only if the target is fully gone from the world
+        if not obj or not obj.Parent then
+            box.Main:Destroy()
+            box.HealthBarBG:Destroy()
+            box.InfoFlags:Destroy()
+            Library.Boxes[obj] = nil
+            local idx = table.find(Library.Targets, obj)
+            if idx then table.remove(Library.Targets, idx) end
             connection:Disconnect()
             return
         end
 
-        local hum = obj:FindFirstChildOfClass("Humanoid")
-        local root = obj:FindFirstChild("HumanoidRootPart")
-        local isPlayer = Players:GetPlayerFromCharacter(obj)
-
-        if not root or not hum or hum.Health <= 0 or (Library.TeamCheck and isPlayer and isPlayer.Team == Players.LocalPlayer.Team) then
-            box.Main.Visible = false; box.HealthBarBG.Visible = false; box.InfoFlags.Visible = false
+        -- hide everything if disabled, but keep connection alive
+        if not Library.Enabled then
+            box.Main.Visible       = false
+            box.HealthBarBG.Visible = false
+            box.InfoFlags.Visible  = false
             return
         end
 
-        local rootPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+        local hum     = obj:FindFirstChildOfClass("Humanoid")
+        local root    = obj:FindFirstChild("HumanoidRootPart")
+        local isPlayer = Players:GetPlayerFromCharacter(obj)
+
+        if not root or not hum or hum.Health <= 0
+        or (Library.TeamCheck and isPlayer and isPlayer.Team == Players.LocalPlayer.Team) then
+            box.Main.Visible       = false
+            box.HealthBarBG.Visible = false
+            box.InfoFlags.Visible  = false
+            return
+        end
+
+        local _, onScreen = Camera:WorldToViewportPoint(root.Position)
         if not onScreen then
-            box.Main.Visible = false; box.HealthBarBG.Visible = false; box.InfoFlags.Visible = false
+            box.Main.Visible       = false
+            box.HealthBarBG.Visible = false
+            box.InfoFlags.Visible  = false
             return
         end
 
         local cf = root.CFrame
-        local size = Vector3.new(4, 6, 0)
         local function getScreenPos(v3)
             local p = Camera:WorldToViewportPoint(v3)
             return Vector2.new(p.X, p.Y)
         end
 
         local corners = {
-            getScreenPos((cf * CFrame.new(-2, 3, 0)).p),
-            getScreenPos((cf * CFrame.new(2, 3, 0)).p),
+            getScreenPos((cf * CFrame.new(-2,  3, 0)).p),
+            getScreenPos((cf * CFrame.new( 2,  3, 0)).p),
             getScreenPos((cf * CFrame.new(-2, -3, 0)).p),
-            getScreenPos((cf * CFrame.new(2, -3, 0)).p)
+            getScreenPos((cf * CFrame.new( 2, -3, 0)).p),
         }
 
         local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
@@ -86,12 +108,12 @@ local function drawBox(obj)
 
         local w, h = maxX - minX, maxY - minY
         box.Main.Position = UDim2.new(0, minX, 0, minY)
-        box.Main.Size = UDim2.new(0, w, 0, h)
-        box.Main.Visible = true
+        box.Main.Size     = UDim2.new(0, w, 0, h)
+        box.Main.Visible  = true
 
         if Library.BoxMode == "Box" then
             box.Outline.Enabled = true
-            box.Outline.Color = Library.BoxColor
+            box.Outline.Color   = Library.BoxColor
             for _, v in pairs(box.Corners) do v.Visible = false end
         else
             box.Outline.Enabled = false
@@ -108,45 +130,47 @@ local function drawBox(obj)
         end
 
         if Library.HealthBar then
-            local pct = math.clamp(hum.Health/hum.MaxHealth, 0, 1)
-            box.HealthBarBG.Visible = true
-            box.HealthBarBG.Position = UDim2.new(0, minX-6, 0, minY)
-            box.HealthBarBG.Size = UDim2.new(0, 3, 0, h)
-            box.HealthBar.Visible = true
-            box.HealthBar.BackgroundColor3 = Color3.fromHSV(pct*0.3, 1, 1)
-            box.HealthBar.Size = UDim2.new(1, 0, pct, 0)
-            box.HealthBar.Position = UDim2.new(0, 0, 1-pct, 0)
+            local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+            box.HealthBarBG.Visible  = true
+            box.HealthBarBG.Position = UDim2.new(0, minX - 6, 0, minY)
+            box.HealthBarBG.Size     = UDim2.new(0, 3, 0, h)
+            box.HealthBar.Visible    = true
+            box.HealthBar.BackgroundColor3 = Color3.fromHSV(pct * 0.3, 1, 1)
+            box.HealthBar.Size       = UDim2.new(1, 0, pct, 0)
+            box.HealthBar.Position   = UDim2.new(0, 0, 1 - pct, 0)
+        else
+            box.HealthBarBG.Visible = false
+            box.HealthBar.Visible   = false
         end
 
         if Library.Flags then
-            box.InfoFlags.Visible = true
-            box.InfoFlags.TextSize = math.clamp(h*0.15, 10, 14)
-            box.InfoFlags.Position = UDim2.new(0, maxX+4, 0, minY)
-            box.InfoFlags.Text = string.format("%s\n%d HP", (isPlayer and isPlayer.Name or obj.Name), math.floor(hum.Health))
+            box.InfoFlags.Visible   = true
+            box.InfoFlags.TextSize  = math.clamp(h * 0.15, 10, 14)
+            box.InfoFlags.Position  = UDim2.new(0, maxX + 4, 0, minY)
+            box.InfoFlags.Text      = string.format("%s\n%d HP", (isPlayer and isPlayer.Name or obj.Name), math.floor(hum.Health))
+        else
+            box.InfoFlags.Visible = false
         end
     end)
 end
 
 function Library.Hook(target)
-    if typeof(target) == "Instance" then
-        if target:IsA("Player") then
-            target.CharacterAppearanceLoaded:Connect(function(char)
-                if not table.find(Library.Targets, char) then
-                    table.insert(Library.Targets, char)
-                    drawBox(char)
-                end
-            end)
-            if target.Character then
-                if not table.find(Library.Targets, target.Character) then
-                    table.insert(Library.Targets, target.Character)
-                    drawBox(target.Character)
-                end
+    if typeof(target) ~= "Instance" then return end
+    if target:IsA("Player") then
+        target.CharacterAppearanceLoaded:Connect(function(char)
+            if not table.find(Library.Targets, char) then
+                table.insert(Library.Targets, char)
+                drawBox(char)
             end
-        elseif target:IsA("Model") then
-            if not table.find(Library.Targets, target) then
-                table.insert(Library.Targets, target)
-                drawBox(target)
-            end
+        end)
+        if target.Character and not table.find(Library.Targets, target.Character) then
+            table.insert(Library.Targets, target.Character)
+            drawBox(target.Character)
+        end
+    elseif target:IsA("Model") then
+        if not table.find(Library.Targets, target) then
+            table.insert(Library.Targets, target)
+            drawBox(target)
         end
     end
 end
