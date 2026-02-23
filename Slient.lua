@@ -1,8 +1,6 @@
 -- silentAim.lua
--- Pre-flick silent aim: snaps camera to nearest target before
--- the click input reaches the game, then restores immediately.
--- Works on most click-to-shoot games. Game-specific versions
--- should override this with proper projectile manipulation.
+-- Pre-flick silent aim: snaps camera to target before
+-- click input reaches the game, then restores.
 
 local Players    = game:GetService("Players")
 local UserInput  = game:GetService("UserInputService")
@@ -12,17 +10,34 @@ local LocalPlayer = Players.LocalPlayer
 local Camera      = workspace.CurrentCamera
 
 local Library = {
-    enabled     = false,
-    fov         = 180,      -- wider than legit aimbot by default
-    hitbox      = 'Head',   -- 'Head' | 'Torso' | 'Nearest'
-    teamcheck   = true,
-    triggerKey  = Enum.UserInputType.MouseButton1,
-    snapBack    = true,     -- restore camera after snap
-    snapFrames  = 1,        -- how many frames to hold snap before restoring
+    enabled    = false,
+    fov        = 180,
+    hitbox     = 'Head',
+    teamcheck  = true,
+    snapBack   = true,
+    snapFrames = 1,
+    -- stored as raw string from KeyPicker e.g. "MB1", "MB2", "F"
+    triggerKey = 'MB1',
 }
 
--- ── Helpers (mirrors aimbotUI pattern) ───────────────────────
+-- ── Key match helper ──────────────────────────────────────────
+-- KeyPicker returns strings like "MB1", "MB2", or a KeyCode name
+local function inputMatches(input)
+    local k = Library.triggerKey
+    if k == 'MB1' then
+        return input.UserInputType == Enum.UserInputType.MouseButton1
+    elseif k == 'MB2' then
+        return input.UserInputType == Enum.UserInputType.MouseButton2
+    else
+        -- assume it's a KeyCode name string e.g. "F", "E", "CapsLock"
+        local ok, enum = pcall(function()
+            return Enum.KeyCode[k]
+        end)
+        return ok and enum and input.KeyCode == enum
+    end
+end
 
+-- ── Helpers ───────────────────────────────────────────────────
 local function isAlive(char)
     if not char then return false end
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -43,8 +58,7 @@ local function getHitboxPart(char)
             or char:FindFirstChild('UpperTorso')
     elseif Library.hitbox == 'Nearest' then
         local center      = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        local closest     = nil
-        local closestDist = math.huge
+        local closest, closestDist = nil, math.huge
         for _, part in pairs(char:GetChildren()) do
             if part:IsA("BasePart") then
                 local sp, vis = Camera:WorldToViewportPoint(part.Position)
@@ -63,12 +77,11 @@ end
 
 local function getBestTarget()
     local center   = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local best     = nil
-    local bestDist = Library.fov
+    local best, bestDist = nil, Library.fov
 
     for _, p in pairs(Players:GetPlayers()) do
-        if p == LocalPlayer  then continue end
-        if isTeammate(p)     then continue end
+        if p == LocalPlayer then continue end
+        if isTeammate(p)    then continue end
 
         local char = p.Character
         if not char or not isAlive(char) then continue end
@@ -82,31 +95,26 @@ local function getBestTarget()
         local dist = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if dist < bestDist then
             bestDist = dist
-            best     = part
+            best = part
         end
     end
 
     return best
 end
 
--- ── Pre-flick input intercept ─────────────────────────────────
+-- ── Pre-flick intercept ───────────────────────────────────────
 UserInput.InputBegan:Connect(function(input, processed)
-    if processed                              then return end
-    if not Library.enabled                    then return end
-    if input.UserInputType ~= Library.triggerKey
-    and input.KeyCode      ~= Library.triggerKey then return end
+    if processed           then return end
+    if not Library.enabled then return end
+    if not inputMatches(input) then return end
 
     local target = getBestTarget()
     if not target then return end
 
     local originalCF = Camera.CFrame
-    local snapCF     = CFrame.lookAt(originalCF.Position, target.Position)
-
-    -- snap
-    Camera.CFrame = snapCF
+    Camera.CFrame    = CFrame.lookAt(originalCF.Position, target.Position)
 
     if Library.snapBack then
-        -- restore after N frames so the click fires during the snap window
         local frames = 0
         local conn
         conn = RunService.RenderStepped:Connect(function()
@@ -119,7 +127,6 @@ UserInput.InputBegan:Connect(function(input, processed)
     end
 end)
 
--- no-op Hook stub for API consistency
 function Library.Hook() end
 
 return Library
