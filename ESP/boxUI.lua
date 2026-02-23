@@ -20,6 +20,8 @@ local Library = {
     Flags      = true,
     TeamCheck  = false,
     Targets    = {},
+    HealthBarColorHigh = Color3.fromRGB(0, 255, 0),  -- full hp
+    HealthBarColorLow  = Color3.fromRGB(255, 0, 0),  -- no hp
 }
 
 local function create(class, props)
@@ -166,7 +168,7 @@ local function updateBox(box, obj)
         box.HealthBarBG.Position  = UDim2.new(0, minX - 6, 0, minY)
         box.HealthBarBG.Size      = UDim2.new(0, 3, 0, h)
         box.HealthBarBG.Visible   = true
-        box.HealthBarFill.BackgroundColor3 = Color3.fromHSV(pct * 0.3, 1, 1)
+        box.HealthBarFill.BackgroundColor3 = Library.HealthBarColorLow:Lerp(Library.HealthBarColorHigh, pct)
         box.HealthBarFill.Size    = UDim2.new(1, 0, pct, 0)
         box.HealthBarFill.Position = UDim2.new(0, 0, 1 - pct, 0)
         box.HealthBarFill.Visible = true
