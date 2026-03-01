@@ -1,7 +1,4 @@
--- silentAim.lua
--- Pre-flick silent aim: snaps camera to target before
--- click input reaches the game, then restores.
-
+-- silentAim.lua (FIXED)
 local Players    = game:GetService("Players")
 local UserInput  = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -10,115 +7,79 @@ local LocalPlayer = Players.LocalPlayer
 local Camera      = workspace.CurrentCamera
 
 local Library = {
-    enabled    = false,
+    enabled    = true, -- Set to true by default for testing
     fov        = 180,
     hitbox     = 'Head',
     teamcheck  = true,
     snapBack   = true,
-    snapFrames = 1,
-    -- stored as raw string from KeyPicker e.g. "MB1", "MB2", "F"
-    triggerKey = 'MB1',
+    triggerKey = 'MB1', -- Mouse Button 1
 }
 
--- ── Key match helper ──────────────────────────────────────────
--- KeyPicker returns strings like "MB1", "MB2", or a KeyCode name
-local function inputMatches(input)
-    local k = Library.triggerKey
-    if k == 'MB1' then
-        return input.UserInputType == Enum.UserInputType.MouseButton1
-    elseif k == 'MB2' then
-        return input.UserInputType == Enum.UserInputType.MouseButton2
-    else
-        -- assume it's a KeyCode name string e.g. "F", "E", "CapsLock"
-        local ok, enum = pcall(function()
-            return Enum.KeyCode[k]
-        end)
-        return ok and enum and input.KeyCode == enum
-    end
+-- Check if target is valid
+local function isAlive(player)
+    return player and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0
 end
 
--- ── Helpers ───────────────────────────────────────────────────
-local function isAlive(char)
-    if not char then return false end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    return hum and hum.Health > 0
-end
-
+-- Team check
 local function isTeammate(player)
     if not Library.teamcheck then return false end
-    return player.Team ~= nil and player.Team == LocalPlayer.Team
+    return player.Team == LocalPlayer.Team
 end
 
-local function getHitboxPart(char)
-    if Library.hitbox == 'Head' then
-        return char:FindFirstChild('Head')
-    elseif Library.hitbox == 'Torso' then
-        return char:FindFirstChild('HumanoidRootPart')
-            or char:FindFirstChild('Torso')
-            or char:FindFirstChild('UpperTorso')
-    elseif Library.hitbox == 'Nearest' then
-        local center      = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        local closest, closestDist = nil, math.huge
-        for _, part in pairs(char:GetChildren()) do
-            if part:IsA("BasePart") then
-                local sp, vis = Camera:WorldToViewportPoint(part.Position)
-                if vis then
-                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                    if d < closestDist then
-                        closestDist = d
-                        closest = part
-                    end
+-- Find best target inside FOV
+local function getBestTarget()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local bestTarget, bestDist = nil, Library.fov
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p == LocalPlayer or isTeammate(p) then continue end
+        
+        local char = p.Character
+        if isAlive(p) then
+            local part = char:FindFirstChild(Library.hitbox)
+            if not part then continue end
+
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                if dist < bestDist then
+                    bestDist = dist
+                    bestTarget = part
                 end
             end
         end
-        return closest
     end
+    return bestTarget
 end
 
-local function getBestTarget()
-    local center   = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local best, bestDist = nil, Library.fov
-
-    for _, p in pairs(Players:GetPlayers()) do
-        if p == LocalPlayer then continue end
-        if isTeammate(p)    then continue end
-
-        local char = p.Character
-        if not char or not isAlive(char) then continue end
-
-        local part = getHitboxPart(char)
-        if not part then continue end
-
-        local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
-        if not onScreen then continue end
-
-        local dist = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-        if dist < bestDist then
-            bestDist = dist
-            best = part
-        end
-    end
-
-    return best
-end
-
--- ── Flick on input frame ─────────────────────────────────────
+-- The Fix: Snap and Delay
 UserInput.InputBegan:Connect(function(input, processed)
-    if processed           then return end
+    -- We allow 'processed' because many guns use MB1 which registers as processed
     if not Library.enabled then return end
-    if not inputMatches(input) then return end
+    
+    local isMatch = false
+    if Library.triggerKey == 'MB1' and input.UserInputType == Enum.UserInputType.MouseButton1 then isMatch = true
+    elseif Library.triggerKey == 'MB2' and input.UserInputType == Enum.UserInputType.MouseButton2 then isMatch = true
+    elseif input.KeyCode.Name == Library.triggerKey then isMatch = true end
+
+    if not isMatch then return end
 
     local target = getBestTarget()
-    if not target then return end
+    if target then
+        local originalCF = Camera.CFrame
+        
+        -- 1. Point camera at target
+        Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, target.Position)
 
-    local originalCF = Camera.CFrame
-    Camera.CFrame    = CFrame.lookAt(originalCF.Position, target.Position)
-
-    if Library.snapBack then
-        Camera.CFrame = originalCF
+        -- 2. Wait a tiny fraction of a second so the game registers the hit
+        -- This is the "Pre-flick" logic that was missing.
+        task.defer(function()
+            RunService.RenderStepped:Wait() 
+            if Library.snapBack then
+                Camera.CFrame = originalCF
+            end
+        end)
     end
 end)
-
-function Library.Hook() end
 
 return Library
