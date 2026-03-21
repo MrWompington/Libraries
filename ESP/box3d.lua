@@ -96,29 +96,20 @@ function ChamsBox:_update()
         return
     end
 
-    local cf = resolveCFrame(self._target)
-
-    -- Project all 8 corners, keep individual visibility + depth
+    local cf        = resolveCFrame(self._target)
     local screenPts = {}
     local valid     = {}
 
     for i, offset in ipairs(self._corners) do
-        local worldPos          = cf:PointToWorldSpace(offset)
-        local screen, onScreen, depth = worldToScreen(worldPos)
+        local worldPos        = cf:PointToWorldSpace(offset)
+        local screen, _, depth = worldToScreen(worldPos)
         screenPts[i] = screen
-        -- a corner is usable if it's in front of the camera
-        valid[i] = onScreen and depth > 0
+        valid[i]     = depth > 0  -- only reject if behind camera
     end
 
-    -- Per-edge: only hide the edge if BOTH its endpoints are behind the camera.
-    -- If at least one endpoint is visible we still draw it — gives you partial
-    -- box edges when a player is at the screen border instead of nothing at all.
     for i, edge in ipairs(EDGES) do
-        local l  = self._lines[i]
-        local v1 = valid[edge[1]]
-        local v2 = valid[edge[2]]
-
-        if v1 or v2 then
+        local l = self._lines[i]
+        if valid[edge[1]] and valid[edge[2]] then
             l.From      = screenPts[edge[1]]
             l.To        = screenPts[edge[2]]
             l.Color     = self.Color
