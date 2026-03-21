@@ -18,8 +18,6 @@ ChamsBox.__index = ChamsBox
 local RunService = game:GetService('RunService')
 local Camera     = workspace.CurrentCamera
 
--- Half-extents define the box size around the origin/part
--- CORNERS: 8 points of a unit box scaled by (x, y, z)
 local function buildCorners(x, y, z)
     return {
         Vector3.new(-x,  y, -z),
@@ -34,17 +32,17 @@ local function buildCorners(x, y, z)
 end
 
 local EDGES = {
-    {1,2},{2,3},{3,4},{4,1}, -- front face
-    {5,6},{6,7},{7,8},{8,5}, -- back face
-    {1,5},{2,6},{3,7},{4,8}, -- connecting edges
+    {1,2},{2,3},{3,4},{4,1},
+    {5,6},{6,7},{7,8},{8,5},
+    {1,5},{2,6},{3,7},{4,8},
 }
 
 local function newLine()
-    local l        = Drawing.new('Line')
-    l.Thickness    = 1
-    l.Color        = Color3.fromRGB(255, 0, 0)
-    l.Visible      = false
-    l.ZIndex       = 5
+    local l     = Drawing.new('Line')
+    l.Thickness = 1
+    l.Color     = Color3.fromRGB(255, 0, 0)
+    l.Visible   = false
+    l.ZIndex    = 5
     return l
 end
 
@@ -53,7 +51,6 @@ local function worldToScreen(pos)
     return Vector2.new(v3.X, v3.Y), onScreen, v3.Z
 end
 
--- Resolve the tracking target each frame into a CFrame
 local function resolveCFrame(target)
     if target == nil then
         return CFrame.new(0, 0, 0)
@@ -70,22 +67,15 @@ local function resolveCFrame(target)
     return CFrame.new(0, 0, 0)
 end
 
---[[
-    ChamsBox.new(x, y, z [, target])
-    x, y, z  : half-extents of the box (studs from center)
-    target   : optional — BasePart | Vector3 | CFrame | function()->CFrame
-               if nil, box sits at world origin (0,0,0)
-]]
 function ChamsBox.new(x, y, z, target)
-    local self = setmetatable({}, ChamsBox)
-
-    self.Enabled   = true
-    self.Color     = Color3.fromRGB(255, 0, 0)
-    self.Thickness = 1
-    self._corners  = buildCorners(x, y, z)
-    self._target   = target
-    self._lines    = {}
-    self._dead     = false
+    local self      = setmetatable({}, ChamsBox)
+    self.Enabled    = true
+    self.Color      = Color3.fromRGB(255, 0, 0)
+    self.Thickness  = 1
+    self._corners   = buildCorners(x, y, z)
+    self._target    = target
+    self._lines     = {}
+    self._dead      = false
 
     for i = 1, #EDGES do
         self._lines[i] = newLine()
@@ -108,22 +98,27 @@ function ChamsBox:_update()
 
     local cf = resolveCFrame(self._target)
 
-    -- Project all 8 corners into screen space
-    local screenPts  = {}
-    local allVisible = true
+    -- Project all 8 corners, keep individual visibility + depth
+    local screenPts = {}
+    local valid     = {}
 
     for i, offset in ipairs(self._corners) do
-        local worldPos         = cf:PointToWorldSpace(offset)
+        local worldPos          = cf:PointToWorldSpace(offset)
         local screen, onScreen, depth = worldToScreen(worldPos)
         screenPts[i] = screen
-        if not onScreen or depth <= 0 then
-            allVisible = false
-        end
+        -- a corner is usable if it's in front of the camera
+        valid[i] = onScreen and depth > 0
     end
 
+    -- Per-edge: only hide the edge if BOTH its endpoints are behind the camera.
+    -- If at least one endpoint is visible we still draw it — gives you partial
+    -- box edges when a player is at the screen border instead of nothing at all.
     for i, edge in ipairs(EDGES) do
-        local l = self._lines[i]
-        if allVisible then
+        local l  = self._lines[i]
+        local v1 = valid[edge[1]]
+        local v2 = valid[edge[2]]
+
+        if v1 or v2 then
             l.From      = screenPts[edge[1]]
             l.To        = screenPts[edge[2]]
             l.Color     = self.Color
