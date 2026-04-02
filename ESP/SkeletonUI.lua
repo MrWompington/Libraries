@@ -118,8 +118,8 @@ local function drawSkeleton(obj)
                 local screenWidth = Camera.ViewportSize.X
                 local screenHeight = Camera.ViewportSize.Y
         
-                local scaleX = 200 / screenWidth
-                local scaleY = 200 / screenHeight
+                local scaleX = 45 / screenWidth
+                local scaleY = 45 / screenHeight
         
                 headDot.Visible = true
                 headDot.Position = UDim2.new(0, p.X, 0, p.Y)
