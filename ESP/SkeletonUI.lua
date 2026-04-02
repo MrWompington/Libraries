@@ -109,27 +109,32 @@ local function drawSkeleton(obj)
         end
 
         -- Handle Head Dot
-       -- Handle Head Dot with Dynamic Scaling
-if Library.headdot and head then
-    local p, vis = Camera:WorldToViewportPoint(head.Position)
-    if vis then
-        -- Calculate distance from camera to head
-        local distance = (Camera.CFrame.Position - head.Position).Magnitude
+       -- Handle Head Dot (Fixed Screen-Relative Scale)
+        if Library.headdot and head then
+            local p, vis = Camera:WorldToViewportPoint(head.Position)
+            if vis then
+                -- We want 200 pixels worth of "space" converted to Scale (0-1)
+                -- Formula: DesiredPixels / TotalScreenPixels
+                local screenWidth = Camera.ViewportSize.X
+                local screenHeight = Camera.ViewportSize.Y
         
-        -- Formula: BaseSize * (ReferenceDistance / CurrentDistance)
-        -- This keeps it looking roughly the same size regardless of range
-        local scaledSize = math.clamp(150 / distance, 3, 10) 
+                local scaleX = 200 / screenWidth
+                local scaleY = 200 / screenHeight
         
-        headDot.Visible = true
-        headDot.Position = UDim2.new(0, p.X, 0, p.Y)
-        headDot.Size = UDim2.new(0, scaledSize, 0, scaledSize)
-        headDot.BackgroundColor3 = currentColor
-    else
-        headDot.Visible = false
-    end
-else
-    headDot.Visible = false
-end
+                headDot.Visible = true
+                headDot.Position = UDim2.new(0, p.X, 0, p.Y)
+                
+                -- Setting the size using Scale (the first and third arguments)
+                -- This effectively makes it "100x100" in a 200-pixel relative context
+                headDot.Size = UDim2.new(scaleX, 0, scaleY, 0)
+                
+                headDot.BackgroundColor3 = currentColor
+            else
+                headDot.Visible = false
+            end
+        else
+            headDot.Visible = false
+        end
 
         -- Rig Logic
         if hum.RigType == Enum.HumanoidRigType.R15 then
