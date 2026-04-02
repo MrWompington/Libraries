@@ -108,14 +108,16 @@ local function drawSkeleton(obj)
             end
         end
 
-        -- Handle Head Dot
+                    -- Handle Head Dot (STRICT 50x50 PIXELS)
             if Library.headdot and head then
                 local p, vis = Camera:WorldToViewportPoint(head.Position)
                 if vis then
                     headDot.Visible = true
+                    -- AnchorPoint 0.5, 0.5 makes the POSITION the center of the dot
+                    headDot.AnchorPoint = Vector2.new(0.5, 0.5) 
                     headDot.Position = UDim2.new(0, p.X, 0, p.Y)
                     
-                    -- Straight pixel offset: 50 width, 50 height
+                    -- ONLY change the 2nd and 4th numbers (Offset). Keep 1st and 3rd at 0.
                     headDot.Size = UDim2.new(0, 50, 0, 50)
                     
                     headDot.BackgroundColor3 = currentColor
