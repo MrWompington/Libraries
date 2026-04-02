@@ -109,22 +109,22 @@ local function drawSkeleton(obj)
         end
 
         -- Handle Head Dot
-if Library.headdot and head then
-    local p, vis = Camera:WorldToViewportPoint(head.Position)
-    if vis then
-        headDot.Visible = true
-        headDot.Position = UDim2.new(0, p.X, 0, p.Y)
-        
-        -- Straight pixel offset: 50 width, 50 height
-        headDot.Size = UDim2.new(0, 50, 0, 50)
-        
-        headDot.BackgroundColor3 = currentColor
-    else
-        headDot.Visible = false
-    end
-else
-    headDot.Visible = false
-end
+            if Library.headdot and head then
+                local p, vis = Camera:WorldToViewportPoint(head.Position)
+                if vis then
+                    headDot.Visible = true
+                    headDot.Position = UDim2.new(0, p.X, 0, p.Y)
+                    
+                    -- Straight pixel offset: 50 width, 50 height
+                    headDot.Size = UDim2.new(0, 50, 0, 50)
+                    
+                    headDot.BackgroundColor3 = currentColor
+                else
+                    headDot.Visible = false
+                end
+            else
+                headDot.Visible = false
+            end
 
         -- Rig Logic
         if hum.RigType == Enum.HumanoidRigType.R15 then
