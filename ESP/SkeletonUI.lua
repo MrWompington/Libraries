@@ -109,19 +109,27 @@ local function drawSkeleton(obj)
         end
 
         -- Handle Head Dot
-        if Library.headdot and head then
-            local p, vis = Camera:WorldToViewportPoint(head.Position)
-            if vis then
-                headDot.Visible = true
-                headDot.Position = UDim2.new(0, p.X, 0, p.Y)
-                headDot.Size = UDim2.new(0, Library.dotSize, 0, Library.dotSize)
-                headDot.BackgroundColor3 = currentColor
-            else
-                headDot.Visible = false
-            end
-        else
-            headDot.Visible = false
-        end
+       -- Handle Head Dot with Dynamic Scaling
+if Library.headdot and head then
+    local p, vis = Camera:WorldToViewportPoint(head.Position)
+    if vis then
+        -- Calculate distance from camera to head
+        local distance = (Camera.CFrame.Position - head.Position).Magnitude
+        
+        -- Formula: BaseSize * (ReferenceDistance / CurrentDistance)
+        -- This keeps it looking roughly the same size regardless of range
+        local scaledSize = math.clamp(150 / distance, 3, 10) 
+        
+        headDot.Visible = true
+        headDot.Position = UDim2.new(0, p.X, 0, p.Y)
+        headDot.Size = UDim2.new(0, scaledSize, 0, scaledSize)
+        headDot.BackgroundColor3 = currentColor
+    else
+        headDot.Visible = false
+    end
+else
+    headDot.Visible = false
+end
 
         -- Rig Logic
         if hum.RigType == Enum.HumanoidRigType.R15 then
